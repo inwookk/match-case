@@ -103,6 +103,105 @@ test('timetable', () => {
   assert.strictEqual(L.timetable('23:30')[4].start, '02:40');
 });
 
+const validForm = () => ({
+  name: ' 김테스트 ', birthYear: '1995', gender: 'M', phone: '01012345678', insta: '@test.kim',
+  yearFrom: '1993', yearTo: '1998', intent: 'serious', smoke: 'no', drink: 'sometimes', religion: 'none',
+  politics: '', area: 'seoul-c', dealbreakers: ['smoker'], nice: ['traveler'], hobbies: ['여행'],
+  avoid: '전애인, 회사 동료', strength: '라면', consent: true,
+});
+
+test('normalizeApplication cleans input', () => {
+  const v = L.normalizeApplication(validForm());
+  assert.strictEqual(v.name, '김테스트');
+  assert.strictEqual(v.phone, '010-1234-5678');
+  assert.strictEqual(v.insta, 'test.kim');
+  assert.strictEqual(v.depositName, '김테스트');
+  assert.deepStrictEqual(v.avoid, ['전애인', '회사 동료']);
+  assert.strictEqual(v.religionMatters, false);
+  assert.deepStrictEqual(L.validateApplication(v), []);
+});
+
+test('validateApplication rejects bad or forged values', () => {
+  const keys = (form) => L.validateApplication(L.normalizeApplication(form)).map((e) => e.key);
+  assert.deepStrictEqual(keys({ ...validForm(), gender: 'X' }), ['gender']);
+  assert.deepStrictEqual(keys({ ...validForm(), dealbreakers: ['smoker', 'far', 'non-drinker'] }), ['dealbreakers']);
+  assert.deepStrictEqual(keys({ ...validForm(), hobbies: ['=HYPERLINK()'] }), ['hobbies']);
+  assert.deepStrictEqual(keys({ ...validForm(), yearFrom: '1999', yearTo: '1993' }), ['yearRange']);
+  assert.deepStrictEqual(keys({ ...validForm(), consent: 'true' }), ['consent']);
+  assert.ok(keys({}).length > 10);
+});
+
+const stateOf = (overrides = {}) => ({
+  people, round1: plan.round1, phase: 1, phaseStartedAt: 123, picks: D.samplePicks(), settings: D.sampleSettings(), ...overrides,
+});
+const PRIVATE_KEYS = ['phone', 'religion', 'politics', 'avoid', 'job', 'dealbreakers', 'nice', 'yearFrom', 'birthYear', 'area', 'station', 'tokenHash', 'depositName'];
+
+test('guestModel shows mates without private fields', () => {
+  const m = L.guestModel(stateOf(), 'p1');
+  assert.strictEqual(m.me.number, 1);
+  assert.strictEqual(m.route.length, 3);
+  assert.strictEqual(m.table.mates.length, 3);
+  m.table.mates.forEach((mate) => {
+    PRIVATE_KEYS.forEach((k) => assert.ok(!(k in mate), `mate leaks ${k}`));
+    assert.ok(!('insta' in mate), 'mate leaks insta');
+  });
+  m.picks.options.forEach((o) => assert.ok(!('insta' in o) && !('phone' in o), 'option leaks'));
+  assert.strictEqual(m.picks.options.length, 8);
+  assert.strictEqual(m.picks.options.filter((o) => !o.met).length, 2);
+});
+
+test('guestModel reveals insta only for mutual picks, and only after results open', () => {
+  const picks = { ...D.samplePicks(), p1: ['p9', 'p11'] };
+  const open = L.guestModel(stateOf({ picks, phase: L.PHASE_PICKS }), 'p1');
+  assert.deepStrictEqual(open.picks.mine, ['p9', 'p11']);
+  assert.deepStrictEqual(open.picks.mutual, [], 'mutual must stay hidden while picks are open');
+  assert.strictEqual(open.picks.revealed, false);
+  const shown = L.guestModel(stateOf({ picks, phase: L.PHASE_RESULTS }), 'p1');
+  assert.deepStrictEqual(shown.picks.mutual.map((x) => x.id), ['p9']);
+  assert.strictEqual(shown.picks.mutual[0].insta, 'minjun.run');
+  const demo = L.guestModel(stateOf({ picks, phase: 0 }), 'p1', { reveal: true });
+  assert.deepStrictEqual(demo.picks.mutual.map((x) => x.id), ['p9']);
+  const none = L.guestModel(stateOf({ phase: L.PHASE_RESULTS }), 'p1');
+  assert.deepStrictEqual(none.picks.mutual, []);
+  assert.strictEqual(none.picks.submitted, false);
+});
+
+test('recommended partner shows only in round 1', () => {
+  const r1 = L.guestModel(stateOf({ phase: 1 }), 'p1');
+  assert.strictEqual(r1.table.mates.filter((m) => m.recommended).length, 1);
+  [2, 3].forEach((phase) => {
+    const later = L.guestModel(stateOf({ phase }), 'p1');
+    assert.strictEqual(later.table.mates.filter((m) => m.recommended).length, 0, `phase ${phase}`);
+  });
+});
+
+test('bad values do not crash scoring or slip through validation', () => {
+  const odd = { ...find('p1'), intent: '', drink: 'unknown' };
+  assert.ok(Number.isFinite(L.pairInsight(odd, find('p9')).score));
+  const keys = L.validateApplication(L.normalizeApplication({ ...validForm(), birthYear: '1990.5' })).map((e) => e.key);
+  assert.deepStrictEqual(keys, ['birthYear']);
+});
+
+test('guestModel for waitlisted guest has no table or picks', () => {
+  const m = L.guestModel(stateOf(), 'p17');
+  assert.strictEqual(m.me.status, 'waitlist');
+  assert.strictEqual(m.me.waitPosition, 1);
+  assert.strictEqual(m.table, null);
+  assert.strictEqual(m.picks, null);
+  assert.ok(!('host_key' in m.event) && !('invite_code' in m.event));
+});
+
+test('validatePicks and validateRound1', () => {
+  assert.strictEqual(L.validatePicks(people, find('p1'), ['p9', 'p10']), null);
+  assert.ok(L.validatePicks(people, find('p1'), ['p2']));
+  assert.ok(L.validatePicks(people, find('p1'), ['p9', 'p10', 'p11', 'p12']));
+  assert.ok(L.validatePicks(people, find('p1'), ['p9', 'p9']));
+  assert.ok(L.validateRound1(plan.round1, people));
+  const broken = plan.round1.map((t, i) => (i === 0 ? { women: t.men, men: t.women } : t));
+  assert.ok(!L.validateRound1(broken, people));
+  assert.ok(!L.validateRound1('nope', people));
+});
+
 console.log(`\n${passed} passed, plan ${planMs}ms`);
 rounds.forEach((tables, r) => {
   console.log(`\n[${r + 1}라운드]`);

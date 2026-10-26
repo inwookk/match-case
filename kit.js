@@ -121,5 +121,32 @@
       });
   }
 
-  root.MeetKit = { $, $$, esc, toast, movePill, selectTab, syncPills, showError, clearError, digits, copyText };
+  const ICONS = {
+    check: '<svg viewBox="0 0 10.1668 10.1668" aria-hidden="true"><path d="M1 5.52L3.92 9.17L9.17 1"/></svg>',
+    bigCheck: '<svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="22"/><path d="M14 24.5l6.5 6.5L34 17.5"/></svg>',
+    chevron: '<svg viewBox="0 0 16 16"><path d="M4 6.5L8 10.5L12 6.5"/></svg>',
+  };
+  const won = (n) => `${Number(n || 0).toLocaleString('ko-KR')}원`;
+  const gcls = (p) => (p.gender === 'F' ? 'her' : 'him');
+  const gshort = (p) => (p.gender === 'F' ? '여' : '남');
+  const toTable = (n) => `테이블 ${n}${[0, 3, 6].includes(n % 10) ? '으로' : '로'}`;
+
+  // 서버를 기다리는 동안 버튼을 막고 글자에 shimmer를 건다. 끝나면 원래대로 되돌린다.
+  function setBusy(btn, label) {
+    if (!btn) return () => {};
+    const before = btn.innerHTML;
+    btn.disabled = true;
+    btn.setAttribute('aria-busy', 'true');
+    btn.innerHTML = `<span class="t-shimmer" data-text="${esc(label)}">${esc(label)}</span>`;
+    return () => {
+      btn.disabled = false;
+      btn.removeAttribute('aria-busy');
+      btn.innerHTML = before;
+    };
+  }
+
+  root.MeetKit = {
+    $, $$, esc, toast, movePill, selectTab, syncPills, showError, clearError, digits, copyText,
+    ICONS, won, gcls, gshort, toTable, setBusy,
+  };
 }(window));

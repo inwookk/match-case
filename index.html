@@ -32,7 +32,7 @@
   </div>
 </header>
 
-<div class="demo-note">
+<div class="demo-note" id="demo-note">
   <div class="demo-note-inner">
     <span class="tag-draft">시안</span>
     <span>가상의 참가자 16명(여 8 · 남 8)과 대기자 1명이 들어 있어요. 눌러봐도 실제로 저장되거나 보내지지 않아요.</span>
@@ -41,6 +41,8 @@
 </div>
 
 <main>
+  <section class="card gate" id="gate" aria-live="polite" hidden></section>
+
   <!-- 신청 -->
   <section class="view narrow" id="view-apply" role="tabpanel" aria-labelledby="tab-apply">
     <article class="invite" aria-labelledby="apply-title">
@@ -243,6 +245,7 @@
         </div>
       </fieldset>
 
+      <p class="notice" id="apply-notice" role="alert" hidden></p>
       <button type="submit" class="btn primary block" id="btn-apply">신청하기</button>
     </form>
 
@@ -252,6 +255,12 @@
       </span>
       <h3 id="done-title">신청했어요</h3>
       <p id="done-text" class="muted"></p>
+      <div class="bank link-box" id="done-link" hidden>
+        <p class="label">내 전용 링크</p>
+        <div class="bank-row"><span class="copyable" id="done-link-text"></span><button type="button" class="btn small" data-action="copy" id="done-link-copy">링크 복사</button></div>
+        <p class="hint">입금 확인, 당일 테이블, 파티 후 결과를 이 링크에서 봐요. 카톡 '나와의 채팅'에 보내 두세요. 잃어버리면 주최자가 새로 만들어 줄 수 있어요.</p>
+        <a class="btn primary" id="done-link-open" href="#">내 화면 열기</a>
+      </div>
       <button type="button" class="btn" data-action="apply-again">다른 사람으로 한 번 더 신청</button>
     </div>
   </section>
@@ -301,8 +310,9 @@
         </section>
         <section class="card" aria-labelledby="h-settings">
           <h3 id="h-settings">행사 정보</h3>
-          <p class="hint">여기서 고치면 신청 화면에 바로 반영돼요.</p>
-          <div class="settings">
+          <p class="hint" id="settings-hint">여기서 고치면 신청 화면에 바로 반영돼요.</p>
+          <div class="settings-live" id="settings-live" hidden></div>
+          <div class="settings" id="settings-demo">
             <div class="field"><label class="label" for="s-name">행사 이름</label><input class="input" id="s-name" data-setting="name" maxlength="30"></div>
             <div class="row2">
               <div class="field"><label class="label" for="s-date">날짜</label><input class="input" id="s-date" data-setting="date" maxlength="30"></div>
@@ -340,10 +350,14 @@
 
 <div class="toast-holder"><div class="t-toast toast" id="toast" role="status" aria-live="polite"></div></div>
 
+<script src="config.js"></script>
 <script src="logic.js"></script>
 <script src="data.js"></script>
 <script src="kit.js"></script>
+<script src="api.js"></script>
 <script src="form.js"></script>
+<script src="guest.js"></script>
+<script src="host.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

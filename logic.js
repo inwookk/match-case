@@ -5,6 +5,9 @@
   const SEATS_PER_GENDER = 8;
   const TABLE_COUNT = 4;
   const ROUND_COUNT = 3;
+  // 진행 단계: 0 입장 전, 1~3 라운드, 4 선택 받는 중, 5 결과 공개(더 못 고침)
+  const PHASE_PICKS = ROUND_COUNT + 1;
+  const PHASE_RESULTS = ROUND_COUNT + 2;
   const ROUND_MINUTES = 60;
   const MOVE_MINUTES = 5;
   const ARRIVE_MINUTES = 20;
@@ -128,7 +131,8 @@
     const reasons = [];
     let score = soft.length * BLOCK_PENALTY + hard.length * AVOID_PENALTY;
 
-    const gap = Math.abs(byId(INTENTS, a.intent).level - byId(INTENTS, b.intent).level);
+    const level = (list, id) => (byId(list, id) || { level: 0 }).level;
+    const gap = Math.abs(level(INTENTS, a.intent) - level(INTENTS, b.intent));
     if (gap === 0) { score += 3; reasons.push(`만남 목적이 같아요 (${labelOf(INTENTS, a.intent)})`); }
     else if (gap === 1) { score += 1; }
     else { score -= 2; reasons.push('만남 목적 차이가 커요'); }
@@ -158,7 +162,7 @@
       else { score -= 1.5; }
     }
 
-    if (byId(DRINK, a.drink).level === byId(DRINK, b.drink).level) score += 1;
+    if (level(DRINK, a.drink) === level(DRINK, b.drink)) score += 1;
 
     return { score, blocks, reasons, shared };
   }
@@ -313,6 +317,178 @@
     return line.findIndex((p) => p.id === person.id) + 1;
   }
 
+  /* ---------- 신청서 정리·검사 (화면과 Apps Script가 함께 쓴다) ---------- */
+  const PHONE_RE = /^01[016789]-\d{3,4}-\d{4}$/;
+  const INSTA_RE = /^[A-Za-z0-9._]{1,30}$/;
+  const MBTI_RE = /^[EI][NS][TF][JP]$/;
+  const YEAR_RANGE = [1950, 2010];
+  const MAX_AVOID = 5;
+
+  const unique = (list) => [...new Set(list)];
+  const isId = (list, id) => list.some((x) => x.id === id);
+
+  function formatPhone(raw) {
+    const d = String(raw || '').replace(/\D/g, '');
+    if (d.length === 11) return `${d.slice(0, 3)}-${d.slice(3, 7)}-${d.slice(7)}`;
+    if (d.length === 10) return `${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6)}`;
+    return String(raw || '').trim().slice(0, 13);
+  }
+
+  function normalizeApplication(raw) {
+    const s = (v, max) => String(v == null ? '' : v).trim().slice(0, max);
+    const list = (v) => unique((Array.isArray(v) ? v : []).map((x) => String(x)));
+    const avoidText = Array.isArray(raw.avoid) ? raw.avoid.join(',') : s(raw.avoid, 60);
+    return {
+      name: s(raw.name, 20), birthYear: Number(raw.birthYear) || 0, gender: s(raw.gender, 1), phone: formatPhone(raw.phone),
+      insta: s(raw.insta, 31).replace(/^@/, ''), yearFrom: Number(raw.yearFrom) || 0, yearTo: Number(raw.yearTo) || 0,
+      intent: s(raw.intent, 20), smoke: s(raw.smoke, 20), drink: s(raw.drink, 20),
+      religion: s(raw.religion, 20), religionMatters: raw.religionMatters === true,
+      politics: s(raw.politics, 20), politicsMatters: raw.politicsMatters === true,
+      area: s(raw.area, 20), station: s(raw.station, 20), job: s(raw.job, 30),
+      dealbreakers: list(raw.dealbreakers), dealNote: s(raw.dealNote, 60),
+      nice: list(raw.nice), niceNote: s(raw.niceNote, 60),
+      avoid: avoidText.split(/[,，、]/).map((x) => x.trim().slice(0, 20)).filter(Boolean).slice(0, MAX_AVOID),
+      mbti: s(raw.mbti, 4).toUpperCase(), strength: s(raw.strength, 30), travel: s(raw.travel, 40),
+      hobbies: list(raw.hobbies), diet: s(raw.diet, 40),
+      lastLove: s(raw.lastLove, 80), lastLovePublic: raw.lastLovePublic === true,
+      depositName: s(raw.depositName, 20) || s(raw.name, 20), consent: raw.consent === true,
+    };
+  }
+
+  // 오류는 { key, msg } 목록으로 돌려준다. key는 입력 항목 이름이다.
+  function validateApplication(v) {
+    const errors = [];
+    const need = (ok, key, msg) => { if (!ok) errors.push({ key, msg }); };
+    const yearOk = (y) => Number.isInteger(y) && y >= YEAR_RANGE[0] && y <= YEAR_RANGE[1];
+    const allIn = (ids, list) => ids.every((id) => isId(list, id));
+    need(v.name.length >= 2, 'name', '이름을 적어주세요');
+    need(yearOk(v.birthYear), 'birthYear', '출생연도를 골라주세요');
+    need(isId(GENDERS, v.gender), 'gender', '성별을 골라주세요');
+    need(PHONE_RE.test(v.phone), 'phone', '010-1234-5678처럼 적어주세요');
+    need(INSTA_RE.test(v.insta), 'insta', '영문, 숫자, 점(.), 밑줄(_)만 쓸 수 있어요');
+    need(yearOk(v.yearFrom) && yearOk(v.yearTo) && v.yearFrom <= v.yearTo, 'yearRange',
+      v.yearFrom > v.yearTo ? '앞쪽에 더 이른 해를 골라주세요' : '만나고 싶은 나이대를 골라주세요');
+    need(isId(INTENTS, v.intent), 'intent', '만남 목적을 골라주세요');
+    need(isId(SMOKE, v.smoke), 'smoke', '흡연 여부를 골라주세요');
+    need(isId(DRINK, v.drink), 'drink', '음주 여부를 골라주세요');
+    need(isId(RELIGIONS, v.religion), 'religion', '종교를 골라주세요. 없음도 있어요');
+    need(isId(POLITICS, v.politics), 'politics', '정치 성향을 다시 골라주세요');
+    need(isId(AREAS, v.area), 'area', '사는 곳을 골라주세요');
+    need(v.dealbreakers.length <= MAX_DEALBREAKERS && allIn(v.dealbreakers, DEALBREAKERS), 'dealbreakers', `${MAX_DEALBREAKERS}개까지 고를 수 있어요`);
+    need(v.nice.length <= MAX_NICE && allIn(v.nice, NICE), 'nice', `${MAX_NICE}개까지 고를 수 있어요`);
+    need(v.hobbies.length <= MAX_HOBBIES && v.hobbies.every((h) => HOBBIES.includes(h)), 'hobbies', `${MAX_HOBBIES}개까지 고를 수 있어요`);
+    need(!v.mbti || MBTI_RE.test(v.mbti), 'mbti', 'ENFJ처럼 네 글자로 적어주세요');
+    need(v.strength, 'strength', '하나만 적어주세요. 대화 카드에 떠요');
+    need(v.depositName, 'depositName', '입금자명을 적어주세요');
+    need(v.consent, 'consent', '동의해야 신청할 수 있어요');
+    return errors;
+  }
+
+  /* ---------- 손님 화면 데이터: 공개해도 되는 것만 담는다 ---------- */
+  function publicEvent(s) {
+    return {
+      name: s.name || '', date: s.date || '', start: s.start || '', place: s.place || '',
+      deposit: Number(s.deposit) || 0, account: s.account || '', refund: s.refund || '',
+    };
+  }
+
+  function publicCard(p) {
+    const card = {
+      id: p.id, number: p.number, nick: p.nick, gender: p.gender,
+      mbti: p.mbti || '', strength: p.strength || '', travel: p.travel || '', diet: p.diet || '',
+      hobbies: [...(p.hobbies || [])],
+    };
+    return p.lastLovePublic && p.lastLove ? { ...card, lastLove: p.lastLove } : card;
+  }
+
+  function currentRoundIndex(phase) {
+    return phase === 0 ? 0 : Math.min(phase, ROUND_COUNT) - 1;
+  }
+
+  function guestTable(rounds, people, me, phase) {
+    const find = (id) => people.find((p) => p.id === id);
+    const route = rounds.map((tables) => tableIndex(tables, me.id) + 1);
+    const rIdx = currentRoundIndex(phase);
+    const table = rounds[rIdx][route[rIdx] - 1];
+    // 추천 짝은 설문으로 정한 1라운드에만, 테이블의 두 짝이 모두 조건에 안 걸릴 때만 보여준다.
+    // 한쪽만 빠지면 그 사람의 비공개 조건을 짐작할 수 있어서다.
+    const ins = tableInsight(table, find);
+    const clean = rIdx === 0 && ins.pairs.every((p) => p.blocks.length === 0);
+    const mine = clean ? ins.pairs.find((p) => p.woman === me.id || p.man === me.id) : null;
+    const partner = mine ? (mine.woman === me.id ? mine.man : mine.woman) : null;
+    const mates = seatsOf(table).filter((id) => id !== me.id).map(find)
+      .sort((a, b) => Number(a.gender === me.gender) - Number(b.gender === me.gender))
+      .map((p) => ({
+        ...publicCard(p),
+        shared: overlap(p.hobbies, me.hobbies),
+        recommended: p.id === partner,
+        sameSex: p.gender === me.gender,
+      }));
+    return { route, table: { index: rIdx, number: route[rIdx], mates } };
+  }
+
+  // 서로 고른 결과는 주최자가 결과를 공개한 뒤(PHASE_RESULTS)에만 담는다.
+  // 고르는 동안 결과를 보여주면 여러 번 바꿔 내면서 누가 나를 골랐는지 알아낼 수 있어서다.
+  // 시안은 바로 보여주도록 options.reveal을 넘긴다.
+  function guestModel(state, meId, options) {
+    const { people, round1, phase, phaseStartedAt, picks, settings } = state;
+    const reveal = options && typeof options.reveal === 'boolean' ? options.reveal : phase >= PHASE_RESULTS;
+    const me = people.find((p) => p.id === meId);
+    if (!me) return null;
+    const base = {
+      me: {
+        id: me.id, number: me.number, nick: me.nick, gender: me.gender, status: me.status,
+        depositName: me.depositName, waitPosition: me.status === 'waitlist' ? waitlistPosition(people, me) : 0,
+      },
+      event: publicEvent(settings),
+      phase,
+      phaseStartedAt: phaseStartedAt || null,
+    };
+    if (me.status !== 'confirmed') return { ...base, route: null, table: null, picks: null };
+    const rounds = round1Valid(round1, people) ? deriveRounds(round1) : null;
+    const seat = rounds ? guestTable(rounds, people, me, phase) : { route: null, table: null };
+    const opp = confirmedOf(people, me.gender === 'F' ? 'M' : 'F').sort((a, b) => a.number - b.number);
+    const met = rounds ? metIn(rounds, me.id) : new Map();
+    const mine = (picks[me.id] || []).filter((id) => opp.some((p) => p.id === id));
+    const mutual = !reveal ? [] : mine.filter((id) => (picks[id] || []).includes(me.id))
+      .map((id) => opp.find((p) => p.id === id))
+      .map((p) => ({ id: p.id, number: p.number, nick: p.nick, gender: p.gender, insta: p.insta }));
+    return {
+      ...base,
+      ...seat,
+      picks: {
+        options: opp.map((p) => ({ ...publicCard(p), met: met.get(p.id) || null })),
+        mine,
+        submitted: Object.prototype.hasOwnProperty.call(picks, me.id),
+        revealed: reveal,
+        mutual,
+      },
+    };
+  }
+
+  function validatePicks(people, me, ids) {
+    if (!Array.isArray(ids) || ids.length > MAX_PICKS || new Set(ids).size !== ids.length) return `${MAX_PICKS}명까지 고를 수 있어요`;
+    const opp = confirmedOf(people, me.gender === 'F' ? 'M' : 'F').map((p) => p.id);
+    return ids.every((id) => opp.includes(id)) ? null : '고를 수 없는 사람이 섞여 있어요. 새로 고쳐 주세요';
+  }
+
+  function validateRound1(round1, people) {
+    if (!Array.isArray(round1) || round1.length !== TABLE_COUNT) return false;
+    const genderOf = (id) => (people.find((p) => p.id === id) || {}).gender;
+    const shapeOk = round1.every((t) => Array.isArray(t.women) && Array.isArray(t.men)
+      && t.women.length === 2 && t.men.length === 2
+      && t.women.every((id) => genderOf(id) === 'F') && t.men.every((id) => genderOf(id) === 'M'));
+    return shapeOk && round1Valid(round1, people) && new Set(round1.flatMap(seatsOf)).size === SEATS_PER_GENDER * 2;
+  }
+
+  function roundClock(startedAt, now) {
+    if (!startedAt) return '';
+    const left = ROUND_MINUTES * 60 * 1000 - (now - startedAt);
+    const abs = Math.abs(left);
+    const t = `${String(Math.floor(abs / 60000)).padStart(2, '0')}:${String(Math.floor((abs % 60000) / 1000)).padStart(2, '0')}`;
+    return left >= 0 ? `남은 시간 ${t}` : `${t} 지났어요`;
+  }
+
   function parseStart(start) {
     const m = /^(\d{1,2}):(\d{2})$/.exec(String(start || '').trim());
     const valid = m && Number(m[1]) < 24 && Number(m[2]) < 60;
@@ -341,11 +517,13 @@
   }
 
   const api = {
-    SEATS_PER_GENDER, TABLE_COUNT, ROUND_COUNT, ROUND_MINUTES, MAX_PICKS, MAX_DEALBREAKERS, MAX_NICE, MAX_HOBBIES,
+    SEATS_PER_GENDER, TABLE_COUNT, ROUND_COUNT, PHASE_PICKS, PHASE_RESULTS, ROUND_MINUTES, MAX_PICKS, MAX_DEALBREAKERS, MAX_NICE, MAX_HOBBIES,
     AREAS, GENDERS, INTENTS, SMOKE, DRINK, RELIGIONS, POLITICS, HOBBIES, DEALBREAKERS, NICE,
     byId, labelOf, yy, areaDistance, pairInsight, planRounds, deriveRounds, tableIndex, seatsOf,
     round1Valid, tableInsight, swapSeats, metIn, mutualMatches, oneSided, seatsTaken, nextNumber,
-    waitlistPosition, timetable, confirmedOf,
+    waitlistPosition, timetable, confirmedOf, currentRoundIndex,
+    normalizeApplication, validateApplication, publicEvent, publicCard, guestModel, validatePicks, validateRound1,
+    roundClock,
   };
 
   if (typeof module === 'object' && module.exports) module.exports = api;
