@@ -3,6 +3,7 @@
   'use strict';
 
   const API_URL = String((root.MEET_CONFIG || {}).apiUrl || '').trim();
+  const STAGE = (root.MEET_CONFIG || {}).stage === 'signup' ? 'signup' : 'party';
   const TIMEOUT_MS = 30000;
 
   // uncertain: 응답을 못 받아서 서버가 처리했는지 알 수 없는 경우(끊김·시간 초과)
@@ -45,5 +46,5 @@
     }
   }
 
-  root.MeetApi = { live: Boolean(API_URL), readLink, linkFor, call, ApiError };
+  root.MeetApi = { live: Boolean(API_URL), stage: STAGE, readLink, linkFor, call, ApiError };
 }(window));

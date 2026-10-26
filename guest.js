@@ -22,12 +22,17 @@
 
   function statusHtml(model) {
     const { me, event } = model;
+    if (me.status === 'applied') {
+      return `<section class="card"><p class="eyebrow">${esc(event.name)}</p><h3>${esc(me.nick)}님, 신청서를 확인하고 있어요</h3>
+        <p class="hint">주최자가 확인하면 이 화면에 예약금 계좌가 떠요. 이 링크를 저장해 두고 나중에 다시 열어주세요.</p></section>`;
+    }
     if (me.status === 'pending') {
-      return `<section class="card"><p class="eyebrow">${esc(event.name)}</p><h3>${esc(me.nick)}님, 입금을 기다리고 있어요</h3>
+      const account = model.payment && model.payment.account;
+      return `<section class="card"><p class="eyebrow">${esc(event.name)}</p><h3>${esc(me.nick)}님, 승인됐어요. 예약금을 보내주세요</h3>
         <div class="bank">
           <div class="bank-row"><span class="label">예약금</span><span class="bank-amount">${esc(won(event.deposit))}</span></div>
-          <div class="bank-row"><span class="copyable">${esc(event.account || '주최자에게 계좌를 물어봐 주세요')}</span>
-            ${event.account ? `<button type="button" class="btn small" data-action="copy" data-copy="${esc(event.account)}">계좌 복사</button>` : ''}</div>
+          <div class="bank-row"><span class="copyable">${esc(account || '주최자에게 계좌를 물어봐 주세요')}</span>
+            ${account ? `<button type="button" class="btn small" data-action="copy" data-copy="${esc(account)}">계좌 복사</button>` : ''}</div>
           <p class="hint">입금자명은 <b>${esc(me.depositName)}</b>(으)로 해주세요. ${esc(event.refund)}</p>
         </div>
         <p class="hint">주최자가 입금을 확인하면 이 화면에 번호표가 떠요.</p></section>`;
@@ -39,8 +44,13 @@
     return `<section class="card"><h3>신청이 취소됐어요</h3><p class="hint">궁금한 건 주최자에게 물어봐 주세요.</p></section>`;
   }
 
+  // ctx.signupOnly: 아직 신청 받는 기간이라 테이블 대신 확정 안내만 보여준다.
   function dayHtml(model, ctx) {
     if (model.me.status !== 'confirmed') return statusHtml(model);
+    if (ctx.signupOnly) {
+      return `${ticketHtml(model)}<section class="card"><h3>참가가 확정됐어요</h3>
+        <p class="hint">파티 당일에 이 링크를 다시 열면 앉을 테이블과 같은 테이블 사람들의 대화 카드가 떠요.</p></section>`;
+    }
     if (!model.table) {
       return `${ticketHtml(model)}<section class="card"><p>아직 테이블이 정해지지 않았어요. 정해지면 여기에 떠요.</p></section>`;
     }

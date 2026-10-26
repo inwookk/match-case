@@ -57,13 +57,21 @@ test('event needs the invite code and hides keys', () => {
   assert.ok(!('invite_code' in data.event));
 });
 
-test('apply stores 16 guests, then waitlists the next woman', () => {
-  sample.forEach((p) => {
+const ACCOUNT = '테스트은행 000-111-222222 · 예금주 테스트';
+
+test('apply puts everyone in 승인 대기 and never returns the account', () => {
+  gas.context.writeSetting_('account', ACCOUNT);
+  sample.filter((p) => p.name !== '서지호').forEach((p) => {
     const data = ok(gas.post({ action: 'apply', code, form: toForm(p) }));
     tokens[p.name] = data.token;
-    assert.strictEqual(data.status, p.name === '오소희' ? 'waitlist' : 'pending', p.name);
+    assert.strictEqual(data.status, 'applied', p.name);
+    assert.ok(!JSON.stringify(data).includes(ACCOUNT), 'apply response leaked the account');
   });
   assert.strictEqual(tokens['오소희'].length, 64);
+  assert.ok(!JSON.stringify(ok(gas.post({ action: 'event', code }))).includes(ACCOUNT), 'event leaked the account');
+  const m = ok(gas.post({ action: 'me', token: tokens['김서연'] }));
+  assert.strictEqual(m.me.status, 'applied');
+  assert.strictEqual(m.payment, null);
 });
 
 test('apply rejects bad requests', () => {
@@ -80,7 +88,7 @@ test('formula-looking text is stored as plain text', () => {
   assert.deepStrictEqual(gas.book.getSheetByName('참가자').formulas, []);
   const p = byName(host(), '=HYPERLINK("x")');
   assert.strictEqual(p.strength, '+1 자신감');
-  assert.strictEqual(p.status, 'waitlist');
+  assert.strictEqual(p.status, 'applied');
 });
 
 test('host view needs the host key and never includes token hashes', () => {
@@ -92,8 +100,26 @@ test('host view needs the host key and never includes token hashes', () => {
   assert.ok(!('host_key' in h.settings));
 });
 
+test('approve takes a seat and only then shows the account', () => {
+  const extraWomen = ['오소희', '=HYPERLINK("x")'];
+  host().people.filter((p) => p.status === 'applied').forEach((p) => {
+    const res = op('approve', { id: p.id });
+    if (extraWomen.includes(p.name)) fail(res, '빈자리가 없어요');
+    else ok(res);
+  });
+  extraWomen.forEach((name) => ok(op('waitlist', { id: byName(host(), name).id })));
+  fail(op('waitlist', { id: byName(host(), '김서연').id }), '승인 대기인');
+  const m = ok(gas.post({ action: 'me', token: tokens['김서연'] }));
+  assert.strictEqual(m.me.status, 'pending');
+  assert.strictEqual(m.payment.account, ACCOUNT);
+  const w = ok(gas.post({ action: 'me', token: tokens['오소희'] }));
+  assert.ok(!JSON.stringify(w).includes(ACCOUNT), 'waitlisted guest sees the account');
+  assert.strictEqual(host().settings.account, ACCOUNT, 'host sees the account');
+});
+
 test('confirm gives numbers 1-8 to women and 9-16 to men', () => {
   host().people.filter((p) => p.status === 'pending').forEach((p) => ok(op('confirm', { id: p.id })));
+  assert.strictEqual(ok(gas.post({ action: 'me', token: tokens['김서연'] })).payment, null);
   const h = host();
   const nums = (g) => h.people.filter((p) => p.gender === g && p.status === 'confirmed').map((p) => p.number).sort((a, b) => a - b);
   assert.deepStrictEqual(nums('F'), [1, 2, 3, 4, 5, 6, 7, 8]);
@@ -174,9 +200,9 @@ test('cancel rules and seating reset', () => {
   fail(op('phase', { phase: 1 }), '테이블을 배정');
 });
 
-test('promote then a manual status edit assigns a number', () => {
+test('approve from the waitlist then a manual status edit assigns a number', () => {
   const h = host();
-  ok(op('promote', { id: byName(h, '오소희').id }));
+  ok(op('approve', { id: byName(h, '오소희').id }));
   const sheet = gas.book.getSheetByName('참가자');
   const row = sheet.cells.findIndex((line) => line.includes('오소희')) + 1;
   const range = sheet.setCell(row, '상태', '확정');

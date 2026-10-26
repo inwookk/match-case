@@ -1,4 +1,4 @@
-/* 시안용 예시 데이터. 실제 사람이 아니라 가상의 참가자 17명이다. */
+/* 시안용 예시 데이터. 실제 사람이 아니라 가상의 참가자 18명이다. */
 (function (root) {
   'use strict';
 
@@ -25,6 +25,7 @@
     { id: 'p15', name: '윤성민', gender: 'M', birthYear: 1991, yearFrom: 1993, yearTo: 1997, intent: 'marriage', smoke: 'no', drink: 'none', religion: 'catholic', politics: 'moderate', area: 'seoul-se', station: '서초', job: '치과의사', dealbreakers: ['heavy-drinker'], nice: ['marriage', 'culture', 'near'], mbti: 'INFJ', strength: '손편지 쓰기', travel: '산티아고 순례길', hobbies: ['독서', '전시', '카페'], diet: '술은 안 마셔요', insta: 'sungmin.letters' },
     { id: 'p16', name: '한우진', gender: 'M', birthYear: 1994, yearFrom: 1993, yearTo: 1997, intent: 'serious', smoke: 'no', drink: 'sometimes', politics: 'progressive', area: 'incheon', station: '송도', job: '항공사', nice: ['pets', 'cook', 'traveler'], mbti: 'ISFJ', strength: '강아지 산책 전문', travel: '삿포로', hobbies: ['반려동물', '요리', '여행'], diet: '해산물 좋아해요', insta: 'woojin.walks' },
     { id: 'p17', name: '오소희', gender: 'F', birthYear: 1995, yearFrom: 1991, yearTo: 1997, intent: 'serious', smoke: 'no', drink: 'sometimes', area: 'seoul-nw', station: '홍대입구', job: '에디터', status: 'waitlist', nice: ['culture', 'traveler'], mbti: 'INTJ', strength: '책 추천', travel: '리스본', hobbies: ['독서', '여행', '카페'], diet: '커피 없인 못 살아요', insta: 'sohee.pages' },
+    { id: 'p18', name: '서지호', gender: 'M', birthYear: 1994, yearFrom: 1992, yearTo: 1998, intent: 'serious', smoke: 'no', drink: 'sometimes', area: 'seoul-c', station: '시청', job: '기자', status: 'applied', nice: ['traveler', 'culture'], mbti: 'ENTJ', strength: '질문 잘하기', travel: '몬트리올', hobbies: ['여행', '독서', '전시'], diet: '다 잘 먹어요', insta: 'jiho.asks' },
   ];
 
   function samplePeople() {

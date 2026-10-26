@@ -7,26 +7,31 @@
   const TOTAL_SEATS = L.SEATS_PER_GENDER * 2;
   const STATUS = {
     confirmed: { label: '확정', cls: 'good', order: 0 },
-    pending: { label: '입금 대기', cls: 'warn', order: 1 },
-    waitlist: { label: '대기자', cls: '', order: 2 },
-    cancelled: { label: '취소', cls: '', order: 3 },
+    applied: { label: '승인 대기', cls: 'accent', order: 1 },
+    pending: { label: '입금 대기', cls: 'warn', order: 2 },
+    waitlist: { label: '대기자', cls: '', order: 3 },
+    cancelled: { label: '취소', cls: '', order: 4 },
   };
 
-  // ctx: { state, ui, live, busy, clock, inviteLink }
+  // ctx: { state, ui, live, busy, clock, inviteLink, signupOnly }
+  // signupOnly: 신청 받는 기간이라 테이블·진행·파티 후 연결 카드는 숨긴다.
   function render(ctx) {
     const { state } = ctx;
     const count = (status, gender) => state.people.filter((p) => p.status === status && (!gender || p.gender === gender)).length;
     $('#host-stats').innerHTML = [
       [`${count('confirmed', 'F')}/${L.SEATS_PER_GENDER}`, '여 확정'],
       [`${count('confirmed', 'M')}/${L.SEATS_PER_GENDER}`, '남 확정'],
+      [count('applied'), '승인 대기'],
       [count('pending'), '입금 대기'],
       [count('waitlist'), '대기자'],
     ].map(([n, label]) => `<div class="stat"><b>${esc(n)}</b><span>${esc(label)}</span></div>`).join('');
-    renderTables(ctx);
+    ['#card-tables', '#card-flow', '#card-links'].forEach((sel) => { $(sel).hidden = Boolean(ctx.signupOnly); });
     renderPeople(ctx);
+    renderSettings(ctx);
+    if (ctx.signupOnly) return;
+    renderTables(ctx);
     renderFlow(ctx);
     renderLinks(ctx);
-    renderSettings(ctx);
   }
 
   const finder = (state) => (id) => state.people.find((p) => p.id === id);
@@ -121,15 +126,18 @@
     const { state, ui } = ctx;
     const id = esc(p.id);
     const dis = ctx.busy ? ' disabled' : '';
+    const word = p.status === 'applied' ? '거절' : '취소';
     const cancel = ui.armedCancel === p.id
-      ? `<button type="button" class="btn small danger-armed" data-action="cancel" data-id="${id}"${dis}>한 번 더 누르면 취소</button>`
-      : `<button type="button" class="btn small" data-action="cancel" data-id="${id}"${dis}>취소</button>`;
+      ? `<button type="button" class="btn small danger-armed" data-action="cancel" data-id="${id}"${dis}>한 번 더 누르면 ${word}</button>`
+      : `<button type="button" class="btn small" data-action="cancel" data-id="${id}"${dis}>${word}</button>`;
+    const open = L.canApprove(state.people, p);
+    const approve = (label) => `<button type="button" class="btn small primary" data-action="approve" data-id="${id}"${open && !ctx.busy ? '' : ' disabled'}${open ? '' : ' title="빈자리가 없어요. 다른 사람을 먼저 취소해야 해요"'}>${label}</button>`;
+    if (p.status === 'applied') {
+      return `${approve('승인')}<button type="button" class="btn small" data-action="to-waitlist" data-id="${id}"${dis}>대기자로</button>${cancel}`;
+    }
     if (p.status === 'pending') return `<button type="button" class="btn small primary" data-action="confirm" data-id="${id}"${dis}>입금 확인</button>${cancel}`;
     if (p.status === 'confirmed') return state.phase > 0 ? '' : cancel;
-    if (p.status === 'waitlist') {
-      const open = L.seatsTaken(state.people, p.gender) < L.SEATS_PER_GENDER;
-      return `<button type="button" class="btn small" data-action="promote" data-id="${id}"${open && !ctx.busy ? '' : ' disabled'}${open ? '' : ' title="빈자리가 생기면 올릴 수 있어요"'}>자리로 올리기</button>`;
-    }
+    if (p.status === 'waitlist') return `${approve('자리로 올리기')}${cancel}`;
     return '';
   }
 

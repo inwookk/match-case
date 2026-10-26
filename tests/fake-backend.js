@@ -11,9 +11,12 @@ const API_PORT = Number(process.env.API_PORT || 5175);
 const WEB_PORT = Number(process.env.WEB_PORT || 5176);
 const TYPES = { '.js': 'text/javascript; charset=utf-8', '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8' };
 const LEFT_OUT = '김서연';
+const STAGE = process.env.STAGE === 'party' ? 'party' : 'signup';
 
 const gas = createGas();
 gas.setup();
+[['name', '11월 친구 미팅 (로컬)'], ['date', '11월 15일 토요일'], ['place', '을지로 OO 라운지 (예시)'],
+  ['account', 'OO은행 000-000-000000 · 예금주 홍길동 (예시)']].forEach(([k, v]) => gas.context.writeSetting_(k, v));
 const { invite_code: code, host_key: hostKey } = gas.settings();
 const tokens = {};
 
@@ -26,6 +29,7 @@ if (process.argv.includes('--seed')) {
     tokens[p.name] = res.data.token;
   });
   const host = gas.post({ action: 'host', key: hostKey }).data;
+  host.people.forEach((p) => gas.post({ action: 'hostAction', key: hostKey, op: 'approve', id: p.id }));
   host.people.forEach((p) => gas.post({ action: 'hostAction', key: hostKey, op: 'confirm', id: p.id }));
   const sample = D.samplePicks();
   console.log('seeded 15 guests; sample pick map has', Object.keys(sample).length, 'pickers (submit them after phase 4 if needed)');
@@ -49,7 +53,7 @@ http.createServer((req, res) => {
   const rel = url === '/' ? 'index.html' : url.replace(/^\/+/, '');
   if (rel === 'config.js') {
     res.writeHead(200, { 'Content-Type': TYPES['.js'], 'Cache-Control': 'no-store' });
-    res.end(`window.MEET_CONFIG = { apiUrl: 'http://127.0.0.1:${API_PORT}/exec' };`);
+    res.end(`window.MEET_CONFIG = { apiUrl: 'http://127.0.0.1:${API_PORT}/exec', stage: '${STAGE}' };`);
     return;
   }
   const file = path.resolve(ROOT, rel);

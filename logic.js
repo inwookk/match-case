@@ -385,11 +385,18 @@
   }
 
   /* ---------- 손님 화면 데이터: 공개해도 되는 것만 담는다 ---------- */
+  // 예약금 계좌는 여기 넣지 않는다. 주최자가 승인한 사람에게만 guestModel의 payment로 따로 보낸다.
   function publicEvent(s) {
     return {
       name: s.name || '', date: s.date || '', start: s.start || '', place: s.place || '',
-      deposit: Number(s.deposit) || 0, account: s.account || '', refund: s.refund || '',
+      deposit: Number(s.deposit) || 0, refund: s.refund || '',
     };
+  }
+
+  // 승인 대기와 대기자는 주최자가 승인하면 입금 대기(자리 차지)로 올라간다.
+  function canApprove(people, person) {
+    return (person.status === 'applied' || person.status === 'waitlist')
+      && seatsTaken(people, person.gender) < SEATS_PER_GENDER;
   }
 
   function publicCard(p) {
@@ -441,6 +448,7 @@
         depositName: me.depositName, waitPosition: me.status === 'waitlist' ? waitlistPosition(people, me) : 0,
       },
       event: publicEvent(settings),
+      payment: me.status === 'pending' ? { account: settings.account || '' } : null,
       phase,
       phaseStartedAt: phaseStartedAt || null,
     };
@@ -523,7 +531,7 @@
     round1Valid, tableInsight, swapSeats, metIn, mutualMatches, oneSided, seatsTaken, nextNumber,
     waitlistPosition, timetable, confirmedOf, currentRoundIndex,
     normalizeApplication, validateApplication, publicEvent, publicCard, guestModel, validatePicks, validateRound1,
-    roundClock,
+    roundClock, canApprove,
   };
 
   if (typeof module === 'object' && module.exports) module.exports = api;

@@ -17,8 +17,12 @@
   const POLL_MS = { guest: 20000, host: 30000 };
   const LINK = Api.readLink();
   const MODE = !Api.live ? 'demo' : LINK.hostKey ? 'host' : LINK.token ? 'guest' : 'apply';
-  const VIEWS = { demo: ['apply', 'host', 'day', 'after'], apply: ['apply'], guest: ['day', 'after'], host: ['host'] }[MODE];
   const LIVE = MODE !== 'demo';
+  // config.js의 stage가 'signup'이면 신청과 승인만 열고, 당일 테이블·파티 후 화면은 숨긴다.
+  const SIGNUP_ONLY = LIVE && Api.stage === 'signup';
+  const VIEWS = {
+    demo: ['apply', 'host', 'day', 'after'], apply: ['apply'], guest: SIGNUP_ONLY ? ['day'] : ['day', 'after'], host: ['host'],
+  }[MODE];
 
   const freshUi = () => ({
     openKeys: new Set(),
@@ -194,19 +198,12 @@
 
   function demoApply(values) {
     const { consent, ...rest } = values;
-    const queued = state.people.some((p) => p.status === 'waitlist' && p.gender === values.gender);
-    const open = !queued && L.seatsTaken(state.people, values.gender) < L.SEATS_PER_GENDER;
     const person = {
       ...rest, id: `n${Date.now().toString(36)}`, nick: /^[가-힣]{3}$/.test(values.name) ? values.name.slice(1) : values.name,
-      status: open ? 'pending' : 'waitlist', number: null, appliedAt: Date.now(),
+      status: 'applied', number: null, appliedAt: Date.now(),
     };
-    const people = [...state.people, person];
-    setState({ people });
-    const full = L.seatsTaken(people, person.gender) >= L.SEATS_PER_GENDER;
-    showDone({
-      status: person.status, waitPosition: L.waitlistPosition(people, person),
-      why: full ? `${L.byId(L.GENDERS, person.gender).label} 자리 ${L.SEATS_PER_GENDER}개가 다 찼어요.` : '먼저 기다리는 분이 있어요.',
-    });
+    setState({ people: [...state.people, person] });
+    showDone({});
   }
 
   async function onSubmit(e) {
@@ -224,7 +221,7 @@
     showNotice('');
     try {
       const data = await Api.call('apply', { code: LINK.code, form: raw });
-      showDone({ status: data.status, waitPosition: data.waitPosition, token: data.token });
+      showDone({ token: data.token });
       load(true);
     } catch (err) {
       // 응답만 못 받았을 수 있다. 그러면 신청은 됐는데 개인 링크만 잃은 상태라 다음 할 일을 알려준다.
@@ -244,12 +241,12 @@
     el.hidden = !text;
   }
 
-  function showDone({ status, waitPosition, why, token }) {
-    const waiting = status === 'waitlist';
-    $('#done-title').textContent = waiting ? '대기자로 신청했어요' : '신청했어요';
-    $('#done-text').textContent = waiting
-      ? `${why ? `${why} ` : ''}지금 대기 ${waitPosition}번째예요. 자리가 나면 연락드리고, 그때 예약금을 받아요.`
-      : `${won(state.settings.deposit)}을 보내주시면 주최자가 확인하고 번호를 드려요.${LIVE ? '' : " 주최자 화면의 '입금 대기'에서 이어서 볼 수 있어요."}`;
+  // 신청하면 모두 승인 대기다. 예약금 계좌는 주최자가 승인한 뒤 개인 화면에서만 보여준다.
+  function showDone({ token }) {
+    $('#done-title').textContent = '신청서를 받았어요';
+    $('#done-text').textContent = LIVE
+      ? '주최자가 신청서를 확인하면 아래 내 전용 링크에서 예약금 계좌를 볼 수 있어요.'
+      : "주최자가 확인하면 예약금 계좌를 알려드려요. 시안에서는 주최자 화면의 '승인 대기'에서 이어서 볼 수 있어요.";
     const box = $('#done-link');
     box.hidden = !token;
     if (token) {
@@ -266,7 +263,7 @@
     void check.offsetWidth;
     check.setAttribute('data-state', 'in');
     done.scrollIntoView({ block: 'center' });
-    toast(waiting ? '대기자 명단에 올렸어요' : '신청서를 받았어요');
+    toast('신청서를 받았어요');
   }
 
   function seatInfo(gender) {
@@ -294,12 +291,10 @@
     ].map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v || '곧 알려드려요')}</dd></div>`).join('');
     $('#apply-program').innerHTML = Host.programHtml(rows, state.phase, false);
     $('#apply-seats').innerHTML = `<p class="label">남은 자리</p>${L.GENDERS.map(seatRow).join('')}
-      <p class="hint">자리가 차면 대기자로 받아요. 취소가 나오면 같은 성별 대기자에게 먼저 연락드려요.</p>`;
+      <p class="hint">주최자가 신청서를 보고 승인하면 자리가 잡혀요. 자리가 차면 대기자로 모셔요.</p>`;
     $('#apply-bank').innerHTML = `
       <div class="bank-row"><span class="label">예약금</span><span class="bank-amount">${esc(won(s.deposit))}</span></div>
-      <div class="bank-row"><span class="copyable">${esc(s.account || '주최자가 곧 알려드려요')}</span>
-        ${s.account ? `<button type="button" class="btn small" data-action="copy" data-copy="${esc(s.account)}">계좌 복사</button>` : ''}</div>
-      <p class="hint">${esc(s.refund)}</p>`;
+      <p class="hint">계좌는 주최자가 신청서를 확인한 뒤 내 전용 링크에서 알려드려요. ${esc(s.refund)}</p>`;
   }
 
   /* ---------- 손님 ---------- */
@@ -345,14 +340,14 @@
     const key = Guest.tableKey(model);
     const animate = view === 'day' && key !== null && ui.shownTable !== null && ui.shownTable !== key;
     if (view === 'day' && key) setUi({ shownTable: key });
-    $('#day-body').innerHTML = Guest.dayHtml(model, { animate, clock: clockNow() });
+    $('#day-body').innerHTML = Guest.dayHtml(model, { animate, clock: clockNow(), signupOnly: SIGNUP_ONLY });
     $('#after-body').innerHTML = Guest.afterHtml(model, { draft: ui.draft.ids, celebrate: ui.celebrate, live: LIVE });
   }
 
   /* ---------- 그리기 ---------- */
   function hostCtx() {
     return {
-      state, ui, live: LIVE, busy: ui.busy, clock: clockNow(),
+      state, ui, live: LIVE, busy: ui.busy, clock: clockNow(), signupOnly: SIGNUP_ONLY,
       inviteLink: state.settings.invite_code ? Api.linkFor('c', state.settings.invite_code) : '',
     };
   }
@@ -465,25 +460,39 @@
         return;
       }
       const p = find(id);
+      const rejected = p.status === 'applied';
       setUi({ armedCancel: null });
       if (LIVE) {
-        if (!(await hostOp('cancel', { id }, btn, '취소하는 중'))) return;
+        if (!(await hostOp('cancel', { id }, btn, rejected ? '거절하는 중' : '취소하는 중'))) return;
       } else {
         const people = state.people.map((x) => (x.id === id ? { ...x, status: 'cancelled', number: null } : x));
         setState({ people, round1: L.round1Valid(state.round1, people) ? state.round1 : null, swapPick: null });
       }
+      if (rejected) {
+        toast(`${p.name}님 신청을 거절했어요`);
+        return;
+      }
       const waiting = state.people.some((x) => x.status === 'waitlist' && x.gender === p.gender);
       toast(`${p.name}님을 취소했어요.${waiting ? ' 대기자를 자리로 올릴 수 있어요' : ''}`);
     },
-    async promote(btn) {
+    async approve(btn) {
       const p = find(btn.dataset.id);
       if (LIVE) {
-        if (!(await hostOp('promote', { id: p.id }, btn, '올리는 중'))) return undefined;
+        if (!(await hostOp('approve', { id: p.id }, btn, '승인하는 중'))) return undefined;
       } else {
-        if (L.seatsTaken(state.people, p.gender) >= L.SEATS_PER_GENDER) return toast('빈자리가 없어요');
+        if (!L.canApprove(state.people, p)) return toast('빈자리가 없어요');
         setState({ people: state.people.map((x) => (x.id === p.id ? { ...x, status: 'pending' } : x)) });
       }
-      return toast(`${p.name}님을 자리로 올렸어요. 예약금 안내를 보내주세요`);
+      return toast(`${p.name}님을 승인했어요. 이제 개인 화면에 예약금 계좌가 보여요`);
+    },
+    async 'to-waitlist'(btn) {
+      const p = find(btn.dataset.id);
+      if (LIVE) {
+        if (!(await hostOp('waitlist', { id: p.id }, btn, '옮기는 중'))) return;
+      } else {
+        setState({ people: state.people.map((x) => (x.id === p.id ? { ...x, status: 'waitlist' } : x)) });
+      }
+      toast(`${p.name}님을 대기자로 뒀어요`);
     },
     async 'next-phase'(btn) {
       const ph = state.phase + 1;

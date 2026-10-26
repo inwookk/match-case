@@ -3,7 +3,8 @@
    처음 한 번 setup을 실행하면 탭과 열쇠가 만들어진다. */
 
 const SHEETS = { settings: '설정', people: '참가자', seats: '자리', picks: '선택' };
-const STATUS_LABELS = { pending: '입금 대기', confirmed: '확정', waitlist: '대기자', cancelled: '취소' };
+// 신청하면 승인 대기 → 주최자가 승인하면 입금 대기(이때부터 계좌가 보임) → 입금 확인하면 확정(번호)
+const STATUS_LABELS = { applied: '승인 대기', pending: '입금 대기', confirmed: '확정', waitlist: '대기자', cancelled: '취소' };
 const TOKEN_COLUMN = '개인 링크 (암호화)';
 const MAX_BODY_CHARS = 20000;
 const MAX_APPLICANTS = 60;
@@ -16,7 +17,7 @@ const DEFAULT_SETTINGS = [
   ['start', '19:00', '1라운드 시작 시각 (24시간제, 예: 19:00)'],
   ['place', '', '장소'],
   ['deposit', '30000', '예약금 (원)'],
-  ['account', '', '예약금 받을 계좌. 초대 링크로 들어온 사람에게만 보여요'],
+  ['account', '', '예약금 받을 계좌. 주최자가 승인한 사람의 개인 화면에만 보여요'],
   ['refund', '파티 3일 전까지 취소하면 전액 돌려드려요. 그 뒤로는 돌려드리지 않아요.', '환불 규칙'],
   ['invite_code', '', '초대 링크 열쇠 (자동). 바꾸면 이전 초대 링크는 막혀요'],
   ['host_key', '', '주최자 링크 열쇠 (자동). 남에게 보여주지 마세요'],
@@ -71,27 +72,19 @@ const ACTIONS = {
       if (active.some((p) => p.phone === v.phone)) {
         throw new UserError('이미 신청한 연락처예요. 개인 링크를 못 받았다면 주최자에게 받아 주세요');
       }
-      const queued = st.people.some((p) => p.status === 'waitlist' && p.gender === v.gender);
-      const open = !queued && L.seatsTaken(st.people, v.gender) < L.SEATS_PER_GENDER;
       const token = newSecret_();
       const { consent, ...fields } = v;
       const person = {
         ...fields,
         id: `p${compactUuid_().slice(0, 10)}`,
         nick: nickOf_(v.name),
-        status: open ? 'pending' : 'waitlist',
+        status: 'applied',
         number: null,
         appliedAt: Date.now(),
         tokenHash: hash_(token),
       };
       writePerson_({ row: null, person });
-      const people = [...st.people, person];
-      return {
-        token,
-        status: person.status,
-        waitPosition: open ? 0 : L.waitlistPosition(people, person),
-        event: L.publicEvent(st.settings),
-      };
+      return { token, status: person.status, event: L.publicEvent(st.settings) };
     });
   },
 
@@ -156,12 +149,19 @@ const HOST_OPS = {
     return {};
   },
 
-  promote(st, { id }) {
-    const L = Logic();
+  // 승인하면 자리를 잡고(입금 대기) 그 사람 개인 화면에 계좌가 보인다.
+  approve(st, { id }) {
     const e = entryById_(st, id);
-    if (e.person.status !== 'waitlist') throw new UserError('대기자만 올릴 수 있어요');
-    if (L.seatsTaken(st.people, e.person.gender) >= L.SEATS_PER_GENDER) throw new UserError('빈자리가 없어요');
+    if (e.person.status !== 'applied' && e.person.status !== 'waitlist') throw new UserError('승인 대기나 대기자만 승인할 수 있어요');
+    if (!Logic().canApprove(st.people, e.person)) throw new UserError('빈자리가 없어요. 대기자로 두거나 다른 사람을 먼저 취소해 주세요');
     writePerson_({ row: e.row, person: { ...e.person, status: 'pending' } });
+    return {};
+  },
+
+  waitlist(st, { id }) {
+    const e = entryById_(st, id);
+    if (e.person.status !== 'applied') throw new UserError('승인 대기인 사람만 대기자로 둘 수 있어요');
+    writePerson_({ row: e.row, person: { ...e.person, status: 'waitlist' } });
     return {};
   },
 
@@ -280,7 +280,7 @@ function loadState_() {
 
 function hostView_(st) {
   return {
-    settings: { ...Logic().publicEvent(st.settings), invite_code: st.settings.invite_code },
+    settings: { ...Logic().publicEvent(st.settings), account: st.settings.account, invite_code: st.settings.invite_code },
     people: st.people.map(({ tokenHash, ...p }) => p),
     round1: st.round1,
     phase: st.phase,
@@ -391,7 +391,7 @@ function columns_() {
   const status = {
     kind: 'text',
     to: (s) => STATUS_LABELS[s] || '',
-    from: (c) => Object.keys(STATUS_LABELS).find((k) => STATUS_LABELS[k] === String(c).trim()) || 'pending',
+    from: (c) => Object.keys(STATUS_LABELS).find((k) => STATUS_LABELS[k] === String(c).trim()) || 'applied',
   };
   const time = { kind: 'date', to: (ms) => (ms ? new Date(ms) : ''), from: (c) => (c instanceof Date ? c.getTime() : Number(c) || 0) };
   const col = (key, header, conv) => ({ key, header, ...(conv || text) });

@@ -231,6 +231,7 @@
                 <li>종교와 정치 성향은 첫 테이블을 정할 때만 쓰고, 화면 어디에도 보여주지 않아요.</li>
                 <li>대화 카드만 같은 테이블 사람에게 보여요.</li>
                 <li>인스타 ID는 파티가 끝나고 서로 골랐을 때만 상대에게 보여요.</li>
+                <li>예약금 계좌는 주최자가 신청서를 확인한 뒤 내 전용 링크에서만 보여요.</li>
                 <li>파티가 끝나고 2주 뒤에 모든 정보를 지워요.</li>
               </ul>
             </div></div></div>
@@ -273,7 +274,7 @@
     </div>
     <div class="host-cols">
       <div class="col">
-        <section class="card" aria-labelledby="h-tables">
+        <section class="card" id="card-tables" aria-labelledby="h-tables">
           <div class="card-head">
             <h3 id="h-tables">테이블 배정</h3>
             <button type="button" class="btn small" data-action="replan" id="btn-replan">설문으로 다시 배정</button>
@@ -292,19 +293,20 @@
           <div class="t-tabs seg seg-sm" role="tablist" aria-label="참가자 상태" id="people-tabs">
             <span class="t-tabs-pill" aria-hidden="true"></span>
             <button class="t-tab" role="tab" aria-selected="true" data-filter="all">전체</button>
-            <button class="t-tab" role="tab" aria-selected="false" data-filter="confirmed">확정</button>
+            <button class="t-tab" role="tab" aria-selected="false" data-filter="applied">승인 대기</button>
             <button class="t-tab" role="tab" aria-selected="false" data-filter="pending">입금 대기</button>
+            <button class="t-tab" role="tab" aria-selected="false" data-filter="confirmed">확정</button>
             <button class="t-tab" role="tab" aria-selected="false" data-filter="waitlist">대기자</button>
           </div>
           <div class="people" id="people-body"></div>
         </section>
       </div>
       <div class="col">
-        <section class="card" aria-labelledby="h-flow">
+        <section class="card" id="card-flow" aria-labelledby="h-flow">
           <h3 id="h-flow">진행</h3>
           <div id="flow-body"></div>
         </section>
-        <section class="card" aria-labelledby="h-links">
+        <section class="card" id="card-links" aria-labelledby="h-links">
           <h3 id="h-links">파티 후 연결</h3>
           <div id="links-body"></div>
         </section>

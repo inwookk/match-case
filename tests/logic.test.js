@@ -191,6 +191,26 @@ test('guestModel for waitlisted guest has no table or picks', () => {
   assert.ok(!('host_key' in m.event) && !('invite_code' in m.event));
 });
 
+test('the deposit account reaches only approved (pending) guests', () => {
+  const account = D.sampleSettings().account;
+  assert.ok(!('account' in L.publicEvent(D.sampleSettings())));
+  ['p18', 'p17', 'p1'].forEach((id) => {
+    const m = L.guestModel(stateOf(), id);
+    assert.ok(!JSON.stringify(m).includes(account), `${id} (${m.me.status}) sees the account`);
+    assert.strictEqual(m.payment, null);
+  });
+  const approved = people.map((p) => (p.id === 'p18' ? { ...p, status: 'pending' } : p));
+  assert.strictEqual(L.guestModel(stateOf({ people: approved }), 'p18').payment.account, account);
+});
+
+test('canApprove needs an open seat', () => {
+  assert.strictEqual(L.canApprove(people, find('p18')), false, 'men are full');
+  assert.strictEqual(L.canApprove(people, find('p17')), false, 'women are full');
+  const freed = people.map((p) => (p.id === 'p3' ? { ...p, status: 'cancelled', number: null } : p));
+  assert.strictEqual(L.canApprove(freed, find('p17')), true);
+  assert.strictEqual(L.canApprove(freed, find('p1')), false, 'confirmed cannot be approved again');
+});
+
 test('validatePicks and validateRound1', () => {
   assert.strictEqual(L.validatePicks(people, find('p1'), ['p9', 'p10']), null);
   assert.ok(L.validatePicks(people, find('p1'), ['p2']));
